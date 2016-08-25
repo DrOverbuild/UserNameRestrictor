@@ -1,7 +1,7 @@
 package com.drizzard.usernamerestrictor;
 
+import com.drizzard.usernamerestrictor.handler.SQLHandler;
 import com.drizzard.usernamerestrictor.handler.SettingsManager;
-import com.drizzard.usernamerestrictor.object.plugin.MinecraftPlugin;
 
 import net.md_5.bungee.api.ChatColor;
 
@@ -10,9 +10,12 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.AsyncPlayerPreLoginEvent;
+import org.bukkit.event.player.AsyncPlayerPreLoginEvent.Result;
 import org.bukkit.plugin.PluginDescriptionFile;
 import org.bukkit.plugin.java.JavaPlugin;
 
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.logging.Level;
@@ -39,12 +42,16 @@ public class UsernameRestrictor extends JavaPlugin implements Listener {
 
     public void onEnable() {
     	
+    	SQLHandler.setupMySQL();
+    	
     	registerCommands();
         registerHandlers();
         registerEvents();
-        
     }
-    
+    public void onDisable() {
+    	SQLHandler.cleanupConnection();
+    }
+   
     public void registerCommands() {
     
     	getCommand("urestrictor").setExecutor(new RestrictorCommands());
@@ -52,7 +59,17 @@ public class UsernameRestrictor extends JavaPlugin implements Listener {
     }
 
     public void registerHandlers() {
-    	
+        
+        if (settings.getSQLData().getConfigurationSection("MySQL") == null) {
+        	settings.getSQLData().set("MySQL.Enabled", false);
+        	settings.getSQLData().set("MySQL.IP", "ip");
+        	settings.getSQLData().set("MySQL.Port", "port");
+        	settings.getSQLData().set("MySQL.Database", "database");
+        	settings.getSQLData().set("MySQL.User", "user");
+        	settings.getSQLData().set("MySQL.Password", "pass");
+        	settings.saveSQLData();
+        }
+        
         if (settings.getPlayerData().getList("KnownUsernames") == null) {
             settings.getPlayerData().set("KnownUsernames", new ArrayList<>());
             settings.savePlayerData();
@@ -60,7 +77,7 @@ public class UsernameRestrictor extends JavaPlugin implements Listener {
         if (settings.getPlayerData().getString("KickMessage") == null) {
         	settings.getPlayerData().set("KickMessage", "&cYou may not change your name! Original name: &b%name%");
         }
-        	
+
      }
 
     public void registerEvents() {
@@ -71,38 +88,58 @@ public class UsernameRestrictor extends JavaPlugin implements Listener {
         instance = this;
     }
 
-    @Override
-    public void onDisable() {
-
-    }
-
     @SuppressWarnings("unchecked")
 	@EventHandler(priority = EventPriority.LOWEST)
     public void onLogin(AsyncPlayerPreLoginEvent event) {
         String playerName = event.getName();
-        List<String> names = (List<String>) settings.getPlayerData().getList("KnownUsernames");
-
-        if (!containsCaseInsensitive(playerName, names)) {
-            names.add(playerName);
-            settings.getPlayerData().set("KnownUsernames", names);
-            settings.savePlayerData();
-        } else {
-            for (String username : (List<String>) settings.getPlayerData().getList("KnownUsernames")) {
+        
+        List<String> names = settings.getPlayerData().getStringList("KnownUsernames");
+        
+        if (settings.getSQLData().getBoolean("MySQL.Enabled")) {
+        	try {
+    			PreparedStatement sql = SQLHandler.connection.prepareStatement("SELECT `username` FROM `knownUsernames`");
+    			
+    			ResultSet result = sql.executeQuery();
+    			
+    			while (result.next()) {
+    				
+    				String username = result.getString(1);
+    				
+    				if (isCaseInsensitive(playerName, username)) {
+    	                if (!username.equals(playerName)) {
+    	                    event.setKickMessage(ChatColor.translateAlternateColorCodes('&', settings.getPlayerData().getString("KickMessage").replace("%name%", username)));
+    	                    event.setLoginResult(Result.KICK_OTHER);
+    	                    break;
+    	                }
+    	            } else {
+    	                SQLHandler.addUsername(playerName);
+    	            }
+    				
+    			}
+    			
+        	}catch (Exception e) {
+        		e.printStackTrace();
+        	}
+        }
+        
+        for (String username : (List<String>) settings.getPlayerData().getList("KnownUsernames")) {
+            if (isCaseInsensitive(playerName, username)) {
                 if (!username.equals(playerName)) {
                     event.setKickMessage(ChatColor.translateAlternateColorCodes('&', settings.getPlayerData().getString("KickMessage").replace("%name%", username)));
-                    event.setLoginResult(AsyncPlayerPreLoginEvent.Result.KICK_OTHER);
+                    event.setLoginResult(Result.KICK_OTHER);
                     break;
                 }
+            } else {
+                names.add(playerName);
+                settings.getPlayerData().set("KnownUsernames", names);
+                settings.savePlayerData();
             }
         }
+
     }
 
-    private boolean containsCaseInsensitive(String strToCompare, List<String> list) {
-        for (String str : list) {
-            if (str.equalsIgnoreCase(strToCompare)) {
-                return true;
-            }
-        }
-        return false;
+    private boolean isCaseInsensitive(String str1, String str2) {
+        if (str1.equalsIgnoreCase(str2)) return true;
+        else return false;
     }
 }

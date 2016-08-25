@@ -21,6 +21,8 @@ public class SettingsManager {
 	  
 	  FileConfiguration PlayerData;
 	  File PlayerDataFile;
+	  FileConfiguration SQLData;
+	  File SQLDataFile;
 	  
 	  public static SettingsManager getInstance() {
 	    return instance;
@@ -32,6 +34,7 @@ public class SettingsManager {
 	    }
 	    
 	    PlayerDataFile = new File(p.getDataFolder(), "PlayerData.yml");
+	    SQLDataFile = new File(p.getDataFolder(), "SQLData.yml");
 	    
 
 	    if (!PlayerDataFile.exists()) {
@@ -42,14 +45,27 @@ public class SettingsManager {
 	          Bukkit.getServer().getLogger().severe(ChatColor.RED + "Could not create PlayerData.yml!");
 	        }
 	    }
+
+	    if (!SQLDataFile.exists()) {
+	        try {
+	          this.SQLDataFile.createNewFile();
+	        }
+	        catch (IOException e) {
+	          Bukkit.getServer().getLogger().severe(ChatColor.RED + "Could not create SQLData.yml!");
+	        }
+	    }
 	    
 	    PlayerData = YamlConfiguration.loadConfiguration(this.PlayerDataFile);
+	    SQLData = YamlConfiguration.loadConfiguration(this.SQLDataFile);
 	    
 	  }
 	  
 
 	  public FileConfiguration getPlayerData() {
 		return PlayerData;
+	  }
+	  public FileConfiguration getSQLData() {
+		return SQLData;
 	  }
 	  
 
@@ -59,6 +75,14 @@ public class SettingsManager {
 		    }
 		    catch (IOException e) {
 		      Bukkit.getServer().getLogger().severe(ChatColor.RED + "Could not save PlayerData.yml!");
+		    }
+	  }
+	  public void saveSQLData() {
+		    try {
+		    	SQLData.save(SQLDataFile);
+		    }
+		    catch (IOException e) {
+		      Bukkit.getServer().getLogger().severe(ChatColor.RED + "Could not save SQLData.yml!");
 		    }
 	  }
 	
