@@ -2,3 +2,7 @@ name: UserNameRestrictor
 main: com.drizzard.usernamerestrictor.UsernameRestrictor
 author: RoyalNinja
 version: 1.2
+commands:
+     urestrictor:
+         usage: /<command>
+         description: Username Restrictor plugin base command.

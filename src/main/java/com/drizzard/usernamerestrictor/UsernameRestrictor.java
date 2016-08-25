@@ -39,9 +39,16 @@ public class UsernameRestrictor extends JavaPlugin implements Listener {
 
     public void onEnable() {
     	
+    	registerCommands();
         registerHandlers();
         registerEvents();
         
+    }
+    
+    public void registerCommands() {
+    
+    	getCommand("urestrictor").setExecutor(new RestrictorCommands());
+    	
     }
 
     public void registerHandlers() {
