@@ -121,7 +121,11 @@ public class UsernameRestrictor extends JavaPlugin implements Listener {
         		e.printStackTrace();
         	}
         }
-        
+        if (settings.getPlayerData().getList("KnownUsernames").isEmpty()) {
+            names.add(playerName);
+            settings.getPlayerData().set("KnownUsernames", names);
+            settings.savePlayerData();
+        }
         for (String username : (List<String>) settings.getPlayerData().getList("KnownUsernames")) {
             if (isCaseInsensitive(playerName, username)) {
                 if (!username.equals(playerName)) {
