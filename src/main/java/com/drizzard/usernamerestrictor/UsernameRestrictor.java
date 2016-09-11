@@ -1,7 +1,8 @@
 package com.drizzard.usernamerestrictor;
 
-import com.drizzard.usernamerestrictor.handler.SQLHandler;
-import com.drizzard.usernamerestrictor.handler.SettingsManager;
+import com.drizzard.usernamerestrictor.datasource.DataSource;
+import com.drizzard.usernamerestrictor.datasource.FlatFileDataSource;
+import com.drizzard.usernamerestrictor.datasource.MySQLDataSource;
 import net.md_5.bungee.api.ChatColor;
 import org.bukkit.Bukkit;
 import org.bukkit.event.EventHandler;
@@ -12,24 +13,22 @@ import org.bukkit.event.player.AsyncPlayerPreLoginEvent.Result;
 import org.bukkit.plugin.PluginDescriptionFile;
 import org.bukkit.plugin.java.JavaPlugin;
 
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
-import java.util.ArrayList;
-import java.util.List;
+import java.io.IOException;
+import java.sql.SQLException;
 import java.util.logging.Level;
 
 public class UsernameRestrictor extends JavaPlugin implements Listener {
 
-	private static UsernameRestrictor instance;
+	public static UsernameRestrictor instance;
 
-	SettingsManager settings = SettingsManager.getInstance();
+	DataSource dataSource;
+	ConfigManager configManager;
 
 	@Override
 	public void onLoad() {
-
 		setInstance();
 
-		settings.setup(this);
+//		settings.setup(this);
 
 		PluginDescriptionFile pluginDescriptionFile = this.getDescription();
 		Bukkit.getLogger().log(Level.INFO, String.format("Loaded %s version %s by RoyalNinja.",
@@ -39,43 +38,50 @@ public class UsernameRestrictor extends JavaPlugin implements Listener {
 	}
 
 	public void onEnable() {
+		configManager = new ConfigManager(this);
+		configManager.setupDefaultConfig();
 
-		SQLHandler.setupMySQL();
+		setupDataSource();
 
 		registerCommands();
-		registerHandlers();
 		registerEvents();
 	}
 
 	public void onDisable() {
-		SQLHandler.cleanupConnection();
+		dataSource.cleanupConnection();
+	}
+
+	public void setupDataSource() {
+		if (configManager.mySQLIsEnabled()) {
+			try{
+				dataSource = new MySQLDataSource(this);
+				return;
+			} catch (SQLException e){
+				getLogger().warning("--- FAILED TO CONNECT TO DATABASE ---");
+				getLogger().warning(" - Message: " + e.getMessage());
+				getLogger().warning(" - Caused by: " + e.getCause().getClass().getName());
+				getLogger().warning(" - SQL State: " + e.getSQLState());
+				getLogger().warning(" - SQL Error code: " + e.getErrorCode());
+				getLogger().warning("-------------------------------------");
+				getLogger().warning(" - It's possible your database login information, including ");
+				getLogger().warning(" - host, port, database, username, and/or password is not");
+				getLogger().warning(" - correct. Please check your information.");
+				getLogger().warning(" - ");
+				getLogger().warning(" - Using players.yml instead of MySQL.");
+				getLogger().warning("-------------------------------------");
+			}
+		}
+
+		try {
+			dataSource = new FlatFileDataSource(this);
+		} catch (IOException e) {
+			getLogger().warning("Failed to load player data file: " + e.getMessage());
+		}
 	}
 
 	public void registerCommands() {
 
-		getCommand("urestrictor").setExecutor(new RestrictorCommands());
-
-	}
-
-	public void registerHandlers() {
-
-		if (settings.getSQLData().getConfigurationSection("MySQL") == null) {
-			settings.getSQLData().set("MySQL.Enabled", false);
-			settings.getSQLData().set("MySQL.IP", "ip");
-			settings.getSQLData().set("MySQL.Port", "port");
-			settings.getSQLData().set("MySQL.Database", "database");
-			settings.getSQLData().set("MySQL.User", "user");
-			settings.getSQLData().set("MySQL.Password", "pass");
-			settings.saveSQLData();
-		}
-
-		if (settings.getPlayerData().getList("KnownUsernames") == null) {
-			settings.getPlayerData().set("KnownUsernames", new ArrayList<>());
-			settings.savePlayerData();
-		}
-		if (settings.getPlayerData().getString("KickMessage") == null) {
-			settings.getPlayerData().set("KickMessage", "&cYou may not change your name! Original name: &b%name%");
-		}
+		getCommand("urestrictor").setExecutor(new RestrictorCommands(this));
 
 	}
 
@@ -92,55 +98,24 @@ public class UsernameRestrictor extends JavaPlugin implements Listener {
 	public void onLogin(AsyncPlayerPreLoginEvent event) {
 		String playerName = event.getName();
 
-		List<String> names = settings.getPlayerData().getStringList("KnownUsernames");
+		String username = dataSource.getUsernameIgnoreCase(playerName);
 
-		if (settings.getSQLData().getBoolean("MySQL.Enabled")) {
-			try {
-				PreparedStatement sql = SQLHandler.connection.prepareStatement("SELECT `username` FROM `knownUsernames`");
-
-				ResultSet result = sql.executeQuery();
-
-				while (result.next()) {
-
-					String username = result.getString(1);
-
-					if (playerName.equalsIgnoreCase(username)) {
-						if (!username.equals(playerName)) {
-							event.setKickMessage(ChatColor.translateAlternateColorCodes('&', settings.getPlayerData().getString("KickMessage").replace("%name%", username)));
-							event.setLoginResult(Result.KICK_OTHER);
-							break;
-						}
-					} else {
-						SQLHandler.addUsername(playerName);
-					}
-
-				}
-
-				result.close();
-
-			} catch (Exception e) {
-				e.printStackTrace();
-			}
+		if(username != null) {
+			event.setKickMessage(ChatColor.translateAlternateColorCodes('&', configManager.getKickMessage().replace("%name%", username)));
+			event.setLoginResult(Result.KICK_OTHER);
 		} else {
-			if (settings.getPlayerData().getList("KnownUsernames").isEmpty()) {
-				names.add(playerName);
-				settings.getPlayerData().set("KnownUsernames", names);
-				settings.savePlayerData();
-			}
-			for (String username : (List<String>) settings.getPlayerData().getList("KnownUsernames")) {
-				if (playerName.equalsIgnoreCase(username)) {
-					if (!username.equals(playerName)) {
-						event.setKickMessage(ChatColor.translateAlternateColorCodes('&', settings.getPlayerData().getString("KickMessage").replace("%name%", username)));
-						event.setLoginResult(Result.KICK_OTHER);
-						break;
-					}
-				} else {
-					names.add(playerName);
-					settings.getPlayerData().set("KnownUsernames", names);
-					settings.savePlayerData();
-				}
+			if (!dataSource.containsUsername(playerName)){
+				dataSource.addUsername(playerName);
 			}
 		}
 
+	}
+
+	public DataSource getDataSource(){
+		return dataSource;
+	}
+
+	public static ConfigManager getConfigManager(){
+		return instance.configManager;
 	}
 }

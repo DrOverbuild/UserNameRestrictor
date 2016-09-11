@@ -2,3 +2,8 @@ name: ${project.artifactId}
 main: ${project.groupId}.${project.artifactId}
 author: stuntguy3000
 version: ${project.version}
+
+commands:
+     urestrictor:
+         usage: /<command>
+         description: Username Restrictor plugin base command.
